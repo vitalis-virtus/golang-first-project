@@ -1,0 +1,30 @@
+{{define "index"}}
+
+<!-- *підключаємо темплейт шапки -->
+{{template "header"}}       
+
+<body class="d-flex h-100 text-center text-bg-dark" cz-shortcut-listen="true">
+    <div class="cover-container d-flex w-100 h-100 p-3 mx-auto flex-column">
+      <main class="inner">
+        <h1>Main page</h1>
+        <p class="lead">Lorem ipsum dolor sit amet consectetur adipisicing elit. Assumenda laudantium officiis labore dolorem, animi nesciunt nam reiciendis modi tempore odio excepturi esse incidunt natus cum architecto est possimus consequuntur error iusto ut similique dolor mollitia perferendis eius! Quos ipsum aliquid repudiandae, minus unde quisquam eaque reprehenderit provident illum qui ratione!</p>
+
+        <!-- todo створюємо цикл, щоб перебрати всі статті  -->
+        {{range .}}
+        <div class="alert alert-danger">
+          <h2>{{ .Title}}</h2>
+          <p class="lead">{{ .Anons}}</p>
+          <a href="/post/{{ .Id}}" class="btn btn-danger">Читать далее</a>
+        </div>
+          {{else}}
+            <p class="lead">No posts!</p>
+          {{end}}
+      <button type="button" class="btn btn-secondary btn-lg">Join us!</button>
+      </main>
+    </div>
+  </body>
+  {{template "footer"}}
+</html>
+
+<!-- *підключаємо темплейт футера -->
+{{end}}

@@ -1,63 +1,168 @@
 package main
 
 import (
-	"fmt"           // пакет для функцій по виводу інформації в консолі чи на сайті
-	"html/template" //пакет для вивод шабонів HTML
-	"net/http"      // пакет для запуска сервера
+	"database/sql"
+	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/mux"
+	"html/template"
+	"net/http"
 )
 
-// створюємо структуру
-type User struct {
-	Name                  string   // відразу треба вказувати тип даних
-	Age                   uint16   //ціле невід'ємне число
-	Money                 int16    //ціле число
-	Avg_grades, Happiness float64  //число з комою
-	Hobbies               []string //створюємо список строк
+type Article struct {
+	Id       uint16
+	Title    string
+	Anons    string
+	FullText string
 }
 
-// створюємо метод для структури
-func (u User) getAllInfo() string { // u -- об'єкт до якого ми будемо звертатись в методі
-	return fmt.Sprintf("Username is: %s. He is %d and he has money"+
-		" equal: %d.", u.Name, u.Age, u.Money) // %s-для строки	%d-для числа
+// * масив постів з елементами типу Article
+var posts = []Article{}
+var showPost = Article{}
+
+func index(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("templates/index.html", "templates/header.html", "templates/footer.html")
+	// !	треба в параметрах передавати всі темплейти, які ми будемо підключати !
+
+	// перевірка на помилку
+	if err != nil {
+		fmt.Fprintf(w, err.Error())
+	}
+
+	//  * підключаємось до бази даних, щоб отримати всі статті
+	db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
+	if err != nil {
+		panic(err)
+	}
+
+	defer db.Close()
+
+	res, err := db.Query("SELECT * FROM `articles`")
+
+	if err != nil {
+		panic(err)
+	}
+
+	posts = []Article{}
+	for res.Next() {
+		var post Article
+		err = res.Scan(&post.Id, &post.Title, &post.Anons, &post.FullText)
+
+		if err != nil {
+			panic(err)
+		}
+
+		// fmt.Println(fmt.Sprintf("Post: %s with id %d", post.Title, post.Id))
+		posts = append(posts, post)
+	}
+
+	//	* всередині HTML файла буде певний блок, який буде називатись index
+	// всередині шаблона буде динамічне підключення
+	// другий параметр показує який конкретно блок ми намагаємось вивести
+	//	третій параметр -- настройки
+	t.ExecuteTemplate(w, "index", posts)
 }
 
-func (u *User) setNewName(newName string) { // треба передавати посилання на сам об'єкт, викор знак "*"
-	u.Name = newName
+func create(w http.ResponseWriter, r *http.Request) {
+	t, err := template.ParseFiles("templates/create.html", "templates/header.html", "templates/footer.html")
+
+	if err != nil {
+		fmt.Fprintf(w, err.Error())
+	}
+
+	t.ExecuteTemplate(w, "create", nil)
+
 }
 
-func home_page(page http.ResponseWriter, r *http.Request) { // через параметр page ми зможемо звертатись до сторінки, показувати, виводити текст, HTML
-	// r параметр, який передається, ми зможемо відслідкувати дані при запиті/підключенні
-	tom := User{"Tom", 35, -10, 2.2, 0.6,
-		[]string{"fotball", "dance", "skate"}}
-	// tom.setNewName("Alex")
-	// fmt.Fprint(page, tom.getAllInfo()) //ствроюємо форматовану строку, в яку можна динамічно підставляти значення
-	// fmt.Fprintf(page, tom.name)
+func save_article(w http.ResponseWriter, r *http.Request) {
+	//  * r -- вся інформація зі сторінки
+	//  ? FormValue приймає назву елемента HTML
+	title := r.FormValue("title")
+	anons := r.FormValue("anons")
+	full_text := r.FormValue("full_text")
 
-	// виводимо HTML на сторінці
-	// fmt.Fprintf(page, `<h1>Header</h1>
-	// <b>Text</b>`)
+	// ! валідація форми
+	if title == "" || anons == "" || full_text == "" {
+		// todo виводимо помилку на екран
+		// fmt.Fprintf(w, "Не все данные заполнены")
+		// todo робимо редірект на форму
+		http.Redirect(w, r, "/create", http.StatusSeeOther)
+	} else {
 
-	//err змінна, яка буде зберігати якісь помилки
-	// tmpl, err
-	tmpl, _ := template.ParseFiles("templates/home_page.html") //ми підгружаємо певний HTML шаблон
-	tmpl.Execute(page, tom)                                    //виконуємо шабон і передаємо в нього дані у вигляді об'єкта tom
+		//  ! підключаємось до БД
+		db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
+		if err != nil {
+			panic(err)
+		}
+
+		defer db.Close()
+
+		// * додавання/установка даних
+		insert, err := db.Query(fmt.Sprintf("INSERT INTO `articles` (`title`, `anons`, `full_text`) VALUES ('%s', '%s', '%s')", title, anons, full_text))
+
+		if err != nil {
+			panic(err)
+		}
+		defer insert.Close()
+
+		//  * робимо переадресацію після додавання в базу даних
+		//  todo передаємо всі параметри w i r, сторінку, на яку буде переадресація і код відповіді
+		http.Redirect(w, r, "/", 301)
+	}
 }
 
-func contacts_page(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Contacts page!")
+func show_post(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r) // ~ & створюємо об'єкт з параметрами з динамічної адреси
+
+	t, err := template.ParseFiles("templates/show.html", "templates/header.html", "templates/footer.html")
+
+	db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
+	if err != nil {
+		panic(err)
+	}
+
+	defer db.Close()
+
+	// ^ робимо запит в БД
+	res, err := db.Query(fmt.Sprintf("SELECT * FROM `articles` WHERE `id`='%s'", vars["id"]))
+
+	if err != nil {
+		panic(err)
+	}
+
+	showPost = Article{}
+	for res.Next() {
+		var post Article
+		err = res.Scan(&post.Id, &post.Title, &post.Anons, &post.FullText)
+
+		if err != nil {
+			panic(err)
+		}
+
+		showPost = post
+	}
+	t.ExecuteTemplate(w, "show", showPost)
 }
 
-func handleRequest() {
-	http.HandleFunc("/", home_page) //роутинг -- при переході на "/" ми застосовуємо метод "home_page"
-	http.HandleFunc("/contacts", contacts_page)
-	http.ListenAndServe(":8080", nil) // запуск локального сервера на порті 8080 / nil - аналог null / дргуий параметр -- настройки
+func handleFunc() {
+	// * відслідковуємо url адреси за допомогою gorilla/mux
+	// *створили новий об'єкт роутер
+	rtr := mux.NewRouter()
+	// ! обробка статичних файлів
+	// обробляeмо всі url адреси, які починаються з static
+	// * кожного разу, коли буде йти звернення до static, ми з цього звернення видаляємо слово static
+	// * а далі по шляху, який залишається, ми шукаємо потрібний файл в папці static
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+
+	rtr.HandleFunc("/", index).Methods("GET")
+	rtr.HandleFunc("/create", create).Methods("GET")
+	rtr.HandleFunc("/save_article", save_article).Methods("POST")
+	rtr.HandleFunc("/post/{id:[0-9]+}", show_post).Methods("GET")
+
+	http.Handle("/", rtr) // & обробка всіх url адрес буде відбуватись через router
+	http.ListenAndServe(":8080", nil)
 }
 
 func main() {
-	// var bob User = ...
-
-	//наступні методи створення екземпляра структури однакові -- можна з ключамми, можна і без
-	// bob := User{name: "Bob", age: 25, money: -50, avg_grades: 4.2, happiness: 0.8}
-
-	handleRequest()
+	handleFunc()
 }
