@@ -1,0 +1,21 @@
+{{define "show"}}
+
+<!-- *підключаємо темплейт шапки -->
+{{template "header"}}       
+
+<body class="d-flex h-100 text-center text-bg-dark" cz-shortcut-listen="true">
+    <div class="cover-container d-flex w-100 h-100 p-3 mx-auto flex-column">
+      <main class="inner">
+        <h1>{{.Title}}</h1>
+        <p class="lead">{{.FullText}}</p>
+        <p class="lead">
+            <a class="btn btn-secondary btn-lg" href="/">Go back!</a>
+        </p>
+      </main>
+    </div>
+  </body>
+  </html>
+  {{template "footer"}}
+
+<!-- *підключаємо темплейт футера -->
+{{end}}

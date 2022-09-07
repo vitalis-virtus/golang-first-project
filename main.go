@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gorilla/mux"
 	"html/template"
 	"net/http"
 )
@@ -17,6 +18,7 @@ type Article struct {
 
 // * масив постів з елементами типу Article
 var posts = []Article{}
+var showPost = Article{}
 
 func index(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("templates/index.html", "templates/header.html", "templates/footer.html")
@@ -109,17 +111,55 @@ func save_article(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func show_post(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r) // ~ & створюємо об'єкт з параметрами з динамічної адреси
+
+	t, err := template.ParseFiles("templates/show.html", "templates/header.html", "templates/footer.html")
+
+	db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
+	if err != nil {
+		panic(err)
+	}
+
+	defer db.Close()
+
+	// ^ робимо запит в БД
+	res, err := db.Query(fmt.Sprintf("SELECT * FROM `articles` WHERE `id`='%s'", vars["id"]))
+
+	if err != nil {
+		panic(err)
+	}
+
+	showPost = Article{}
+	for res.Next() {
+		var post Article
+		err = res.Scan(&post.Id, &post.Title, &post.Anons, &post.FullText)
+
+		if err != nil {
+			panic(err)
+		}
+
+		showPost = post
+	}
+	t.ExecuteTemplate(w, "show", showPost)
+}
+
 func handleFunc() {
+	// * відслідковуємо url адреси за допомогою gorilla/mux
+	// *створили новий об'єкт роутер
+	rtr := mux.NewRouter()
 	// ! обробка статичних файлів
 	// обробляeмо всі url адреси, які починаються з static
 	// * кожного разу, коли буде йти звернення до static, ми з цього звернення видаляємо слово static
 	// * а далі по шляху, який залишається, ми шукаємо потрібний файл в папці static
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 
-	http.HandleFunc("/", index)
-	http.HandleFunc("/create", create)
-	http.HandleFunc("/save_article", save_article)
+	rtr.HandleFunc("/", index).Methods("GET")
+	rtr.HandleFunc("/create", create).Methods("GET")
+	rtr.HandleFunc("/save_article", save_article).Methods("POST")
+	rtr.HandleFunc("/post/{id:[0-9]+}", show_post).Methods("GET")
 
+	http.Handle("/", rtr) // & обробка всіх url адрес буде відбуватись через router
 	http.ListenAndServe(":8080", nil)
 }
 
