@@ -3,16 +3,20 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"html/template"
 	"net/http"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
-type User struct {
-	Name string `json:"name"` // відображаємо в джсон форматі
-	Age  uint16 `json:"age"`
+type Article struct {
+	Id       uint16
+	Title    string
+	Anons    string
+	FullText string
 }
+
+// * масив постів з елементами типу Article
+var posts = []Article{}
 
 func index(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("templates/index.html", "templates/header.html", "templates/footer.html")
@@ -23,11 +27,38 @@ func index(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, err.Error())
 	}
 
+	//  * підключаємось до бази даних, щоб отримати всі статті
+	db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
+	if err != nil {
+		panic(err)
+	}
+
+	defer db.Close()
+
+	res, err := db.Query("SELECT * FROM `articles`")
+
+	if err != nil {
+		panic(err)
+	}
+
+	posts = []Article{}
+	for res.Next() {
+		var post Article
+		err = res.Scan(&post.Id, &post.Title, &post.Anons, &post.FullText)
+
+		if err != nil {
+			panic(err)
+		}
+
+		// fmt.Println(fmt.Sprintf("Post: %s with id %d", post.Title, post.Id))
+		posts = append(posts, post)
+	}
+
 	//	* всередині HTML файла буде певний блок, який буде називатись index
 	// всередині шаблона буде динамічне підключення
 	// другий параметр показує який конкретно блок ми намагаємось вивести
 	//	третій параметр -- настройки
-	t.ExecuteTemplate(w, "index", nil)
+	t.ExecuteTemplate(w, "index", posts)
 }
 
 func create(w http.ResponseWriter, r *http.Request) {
@@ -38,15 +69,44 @@ func create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t.ExecuteTemplate(w, "create", nil)
+
 }
 
 func save_article(w http.ResponseWriter, r *http.Request) {
 	//  * r -- вся інформація зі сторінки
 	//  ? FormValue приймає назву елемента HTML
-	// title := r.FormValue("title")
-	// anons := r.FormValue("anons")
-	// full_text := r.FormValue("full_text")
+	title := r.FormValue("title")
+	anons := r.FormValue("anons")
+	full_text := r.FormValue("full_text")
 
+	// ! валідація форми
+	if title == "" || anons == "" || full_text == "" {
+		// todo виводимо помилку на екран
+		// fmt.Fprintf(w, "Не все данные заполнены")
+		// todo робимо редірект на форму
+		http.Redirect(w, r, "/create", http.StatusSeeOther)
+	} else {
+
+		//  ! підключаємось до БД
+		db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
+		if err != nil {
+			panic(err)
+		}
+
+		defer db.Close()
+
+		// * додавання/установка даних
+		insert, err := db.Query(fmt.Sprintf("INSERT INTO `articles` (`title`, `anons`, `full_text`) VALUES ('%s', '%s', '%s')", title, anons, full_text))
+
+		if err != nil {
+			panic(err)
+		}
+		defer insert.Close()
+
+		//  * робимо переадресацію після додавання в базу даних
+		//  todo передаємо всі параметри w i r, сторінку, на яку буде переадресація і код відповіді
+		http.Redirect(w, r, "/", 301)
+	}
 }
 
 func handleFunc() {
@@ -64,44 +124,5 @@ func handleFunc() {
 }
 
 func main() {
-	// handleFunc()
-	// * в db записується саме підключення до БД
-	db, err := sql.Open("mysql", "root@tcp(127.0.0.1)/golang")
-	if err != nil {
-		panic(err)
-	}
-
-	defer db.Close()
-
-	// ! додавання/установка даних
-	insert, err := db.Query("INSERT INTO `users` (`name`, `age`) VALUES ('Bob', 35)")
-
-	if err != nil {
-		panic(err)
-	}
-	defer insert.Close()
-
-	//  ! вибірка даних
-	res, err := db.Query("SELECT `name`, `age` FROM `users`")
-	if err != nil {
-		panic(err)
-	}
-
-	// ? запустимо цикл по всіх результатах з сервера
-	// * Next() видає чи є настпна строка, яку можна обробити
-	for res.Next() {
-		var user User
-		// * Scan() перевіряє чи існує якесь певне значення
-		//  * перебираємо кожен ряд і витягуємо два параметри Name i Age
-		err = res.Scan(&user.Name, &user.Age)
-
-		if err != nil {
-			panic(err)
-		}
-
-		//  * Sprintf формує саму строку
-		fmt.Println(fmt.Sprintf("User: %s with age %d", user.Name, user.Age))
-
-	}
-
+	handleFunc()
 }
